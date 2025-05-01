@@ -339,6 +339,18 @@ def main() -> None:
         max_value=60,
         key="selected_rate_limit",
     )
+
+    parallel_size, _ = st.columns([0.28, 0.72])
+    parallel_limit = parallel_size.number_input(
+        "Parallel Requests:",
+        value=1,
+        help="Number of parallel requests to the embedding server",
+        min_value=1,
+        max_value=10,
+        key="selected_parallel_limit",
+    )
+
+
     if not embed_request.alias:
         st.info("Please provide a Vector Store Alias.")
     elif st.button(
@@ -378,6 +390,7 @@ def main() -> None:
             embed_params = {
                 "client": state.user_settings["client"],
                 "rate_limit": rate_limit,
+                "parallel_limit": parallel_limit,
             }
             response = api_call.post(
                 endpoint="v1/embed",

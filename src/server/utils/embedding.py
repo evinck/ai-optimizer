@@ -4,6 +4,7 @@ Licensed under the Universal Permissive License v1.0 as shown at http://oss.orac
 """
 # spell-checker:ignore langchain, docstore, docos, vectorstores, oraclevs, genai, hnsw
 
+import asyncio
 import json
 import copy
 import math
@@ -253,12 +254,13 @@ def load_and_split_url(
 ##########################################
 # Vector Store
 ##########################################
-def populate_vs(
+async def populate_vs(
     vector_store: DatabaseVectorStorage,
     db_details: Database,
     embed_client: BaseChatModel,
     input_data: Union[list["LangchainDocument"], list] = None,
     rate_limit: int = 0,
+    parallelism: int = 1,
 ) -> None:
     """Populate the Vector Storage"""
     # Copy our vector storage object so can process a tmp one
@@ -317,25 +319,37 @@ def populate_vs(
         query="AI Optimizer for Apps - Powered by Oracle",
     )
 
+    # evinck Change for //isme
+    tasks=[]
+    steps = math.ceil(len(unique_chunks) / parallelism)
+    logger.info("Splitting %i chunks in %i parallel batch of %i chunks", len(unique_chunks), parallelism, steps)
+    for i in range(0, len(unique_chunks), steps):
+        subbatch = unique_chunks[i : i + steps]
+        tasks.append(OracleVS.aadd_documents(vs_tmp, documents=subbatch))
+    
+    logger.info("Processing %i parallels tasks", len(tasks)) 
+    await asyncio.gather(*tasks)
+
     # Batch Size does not have a measurable impact on performance
     # but does eliminate issues with timeouts
     # Careful increasing as may break token rate limits
 
-    batch_size = 500
-    logger.info("Embedding chunks in batches of: %i", batch_size)
-    for i in range(0, len(unique_chunks), batch_size):
-        batch = unique_chunks[i : i + batch_size]
-        logger.info(
-            "Processing: %i Chunks of %i (Rate Limit: %i)",
-            len(unique_chunks) if len(unique_chunks) < i + batch_size else i + batch_size,
-            len(unique_chunks),
-            rate_limit,
-        )
-        OracleVS.add_documents(vs_tmp, documents=batch)
-        if rate_limit > 0:
-            interval = 60 / rate_limit
-            logger.info("Rate Limiting: sleeping for %i seconds", interval)
-            time.sleep(interval)
+    # Original code
+    # batch_size = 500
+    # logger.info("Embedding chunks in batches of: %i", batch_size)
+    # for i in range(0, len(unique_chunks), batch_size):
+    #     batch = unique_chunks[i : i + batch_size]
+    #     logger.info(
+    #         "Processing: %i Chunks of %i (Rate Limit: %i)",
+    #         len(unique_chunks) if len(unique_chunks) < i + batch_size else i + batch_size,
+    #         len(unique_chunks),
+    #         rate_limit,
+    #     )
+    #     OracleVS.add_documents(vs_tmp, documents=batch)
+    #     if rate_limit > 0:
+    #         interval = 60 / rate_limit
+    #         logger.info("Rate Limiting: sleeping for %i seconds", interval)
+    #         time.sleep(interval)
 
     # Create our real vector storage if doesn't exist
     vs_real = OracleVS(

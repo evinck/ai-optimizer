@@ -250,7 +250,7 @@ def register_endpoints(noauth: FastAPI, auth: FastAPI) -> None:
         description="Split and Embed Corpus.",
     )
     async def split_embed(
-        request: schema.DatabaseVectorStorage, rate_limit: int = 0, client: schema.ClientIdType = Header(...)
+        request: schema.DatabaseVectorStorage, rate_limit: int = 0, parallel_limit: int = 1, client: schema.ClientIdType = Header(...)
     ) -> Response:
         """Perform Split and Embed"""
         logger.debug("Received split_embed - rate_limit: %i; request: %s", rate_limit, request)
@@ -271,6 +271,8 @@ def register_endpoints(noauth: FastAPI, auth: FastAPI) -> None:
                 detail=f"Client: {client} no files found in folder.",
             )
         try:
+            time_start = time.time()
+
             split_docos, _ = embedding.load_and_split_documents(
                 files,
                 request.model,
@@ -288,15 +290,18 @@ def register_endpoints(noauth: FastAPI, auth: FastAPI) -> None:
                 **request.model_dump(exclude={"database", "vector_store"})
             )
 
-            embedding.populate_vs(
+            await embedding.populate_vs(
                 vector_store=request,
                 db_details=get_client_db(client),
                 embed_client=embed_client,
                 input_data=split_docos,
                 rate_limit=rate_limit,
+                parallelism=parallel_limit,
             )
+
+            time_spent = time.time() - time_start
             return Response(
-                content=json.dumps({"message": f"{len(split_docos)} chunks embedded."}), media_type="application/json"
+                content=json.dumps({"message": f"{len(split_docos)} chunks embedded in {time_spent} seconds."}), media_type="application/json"
             )
         except ValueError as ex:
             raise HTTPException(status_code=500, detail=str(ex)) from ex
